@@ -1,78 +1,99 @@
 package com.example.brusselscollectiondemo.network
 
 import com.example.brusselscollectiondemo.data.AddressQuery
+import com.example.brusselscollectiondemo.data.CollectionEvent
 import com.example.brusselscollectiondemo.data.CollectionSchedule
+import com.example.brusselscollectiondemo.data.WasteType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.FormBody
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import org.jsoup.Jsoup
+import okhttp3.*
+import org.json.JSONArray
+import org.json.JSONObject
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 
-class RealBrusselsScraper(
-    private val parser: CollectionParser = CollectionParser()
-) {
+class RealBrusselsScraper {
+
     private val client = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .build()
 
-    private val calendarUrl = "https://www.arp-gan.be/fr/calendrier-sorties-de-sacs"
+    private val baseUrl = "https://formsv2.arp-gan.eu"
 
     suspend fun fetch(query: AddressQuery): Result<CollectionSchedule> = withContext(Dispatchers.IO) {
         runCatching {
-            val initialRequest = Request.Builder()
-                .url(calendarUrl)
-                .header("User-Agent", "Mozilla/5.0 (Android)")
+
+            // 1. Validation adresse
+            val validationUrl = "$baseUrl/GetAddress.aspx" +
+                    "?rue=${query.street}" +
+                    "&numero=${query.number}" +
+                    "&zip=${query.postalCode}" +
+                    "&Lang=fr" +
+                    "&operation=VALIDATION"
+
+            val validationResponse = client.newCall(
+                Request.Builder().url(validationUrl).build()
+            ).execute().use {
+                JSONObject(it.body?.string() ?: "{}")
+            }
+
+            // ⚠️ IMPORTANT : extraire les bons champs depuis la réponse JSON
+            val streetId = validationResponse.optString("StreetId")
+            val houseNumberId = validationResponse.optString("HouseNumberId")
+
+            check(streetId.isNotEmpty()) { "Adresse invalide" }
+
+            // 2. Appel calendrier
+            val body = FormBody.Builder()
+                .add("streetId", streetId)
+                .add("houseNumberId", houseNumberId)
+                .add("lang", "fr")
                 .build()
 
-            val initialHtml = client.newCall(initialRequest).execute().use { response ->
-                check(response.isSuccessful) { "Erreur GET: ${response.code}" }
-                response.body?.string().orEmpty()
+            val calendarResponse = client.newCall(
+                Request.Builder()
+                    .url("$baseUrl/GetCalendarWeb.aspx")
+                    .post(body)
+                    .build()
+            ).execute().use {
+                JSONObject(it.body?.string() ?: "{}")
             }
 
-            val doc = Jsoup.parse(initialHtml)
-            val form = doc.selectFirst("form") ?: error("Formulaire introuvable")
+            val eventsJson = calendarResponse.optJSONArray("Data") ?: JSONArray()
 
-            val actionUrl = form.absUrl("action").ifBlank { calendarUrl }
+            val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 
-            val fields = form.select("input[type=hidden]")
-                .associate { it.attr("name") to it.attr("value") }
-                .toMutableMap()
+            val events = mutableListOf<CollectionEvent>()
 
-            /*
-             * A AJUSTER SI NECESSAIRE :
-             * remplace ces clés par les vrais attributs 'name' du formulaire
-             * après inspection du HTML réel.
-             */
-            fields["street"] = query.street
-            fields["number"] = query.number
-            fields["postal_code"] = query.postalCode
-            fields["municipality"] = query.municipality
+            for (i in 0 until eventsJson.length()) {
+                val item = eventsJson.getJSONObject(i)
 
-            val formBody = FormBody.Builder().apply {
-                fields.forEach { (k, v) -> add(k, v) }
-            }.build()
+                val date = LocalDate.parse(item.getString("Date"), formatter)
+                val type = item.optString("Type")
 
-            val postRequest = Request.Builder()
-                .url(actionUrl)
-                .post(formBody)
-                .header("User-Agent", "Mozilla/5.0 (Android)")
-                .build()
+                val wasteType = when {
+                    type.contains("white", true) -> WasteType.WHITE
+                    type.contains("blue", true) -> WasteType.BLUE
+                    type.contains("yellow", true) -> WasteType.YELLOW
+                    type.contains("organic", true) -> WasteType.ORGANIC
+                    else -> WasteType.UNKNOWN
+                }
 
-            val resultHtml = client.newCall(postRequest).execute().use { response ->
-                check(response.isSuccessful) { "Erreur POST: ${response.code}" }
-                response.body?.string().orEmpty()
+                events.add(
+                    CollectionEvent(
+                        date = date,
+                        wasteType = wasteType,
+                        label = type
+                    )
+                )
             }
 
-            val schedule = parser.parse(resultHtml, query)
-
-            check(schedule.events.isNotEmpty()) {
-                "Aucune collecte détectée. Vérifie les noms des champs du formulaire."
-            }
-
-            schedule
+            CollectionSchedule(
+                query = query,
+                events = events
+            )
         }
     }
 }
