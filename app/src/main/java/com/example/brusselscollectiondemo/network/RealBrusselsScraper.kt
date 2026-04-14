@@ -109,39 +109,47 @@ class RealBrusselsScraper {
 
             val events = mutableListOf<CollectionEvent>()
 
-            for (i in 0 until dataArray.length()) {
-                val item = dataArray.getJSONObject(i)
+for (i in 0 until dataArray.length()) {
+    val item = dataArray.getJSONObject(i)
 
-                val rawDate = item.optString("Date")
-                    .ifBlank { item.optString("date") }
+    val rawDate = item.optString("Date")
+        .ifBlank { item.optString("date") }
 
-                val rawType = item.optString("Type")
-                    .ifBlank { item.optString("type") }
-                    .ifBlank { item.optString("Label") }
+    val rawType = item.optString("Type")
+        .ifBlank { item.optString("type") }
+        .ifBlank { item.optString("Label") }
 
-                val date = runCatching { LocalDate.parse(rawDate, formatter1) }
-                    .recoverCatching { LocalDate.parse(rawDate, formatter2) }
-                    .getOrElse {
-                        continue
-                    }
+    val date = try {
+        LocalDate.parse(rawDate, formatter1)
+    } catch (_: Exception) {
+        try {
+            LocalDate.parse(rawDate, formatter2)
+        } catch (_: Exception) {
+            null
+        }
+    }
 
-                val wasteType = when {
-                    rawType.contains("blanc", true) || rawType.contains("white", true) -> WasteType.WHITE
-                    rawType.contains("bleu", true) || rawType.contains("blue", true) -> WasteType.BLUE
-                    rawType.contains("jaune", true) || rawType.contains("yellow", true) -> WasteType.YELLOW
-                    rawType.contains("organ", true) || rawType.contains("orange", true) || rawType.contains("vert", true) -> WasteType.ORGANIC
-                    rawType.contains("encombr", true) || rawType.contains("bulky", true) -> WasteType.BULKY
-                    else -> WasteType.UNKNOWN
-                }
+    if (date == null) {
+        continue
+    }
 
-                events.add(
-                    CollectionEvent(
-                        date = date,
-                        wasteType = wasteType,
-                        label = rawType.ifBlank { item.toString() }
-                    )
-                )
-            }
+    val wasteType = when {
+        rawType.contains("blanc", true) || rawType.contains("white", true) -> WasteType.WHITE
+        rawType.contains("bleu", true) || rawType.contains("blue", true) -> WasteType.BLUE
+        rawType.contains("jaune", true) || rawType.contains("yellow", true) -> WasteType.YELLOW
+        rawType.contains("organ", true) || rawType.contains("orange", true) || rawType.contains("vert", true) -> WasteType.ORGANIC
+        rawType.contains("encombr", true) || rawType.contains("bulky", true) -> WasteType.BULKY
+        else -> WasteType.UNKNOWN
+    }
+
+    events.add(
+        CollectionEvent(
+            date = date,
+            wasteType = wasteType,
+            label = rawType.ifBlank { item.toString() }
+        )
+    )
+}
 
             check(events.isNotEmpty()) {
                 "Aucune collecte trouvée. JSON calendrier = ${calendarJson.toString(2)}"
