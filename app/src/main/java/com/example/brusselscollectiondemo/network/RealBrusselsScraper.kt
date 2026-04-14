@@ -1,12 +1,16 @@
 package com.example.brusselscollectiondemo.network
 
+import android.util.Log
 import com.example.brusselscollectiondemo.data.AddressQuery
 import com.example.brusselscollectiondemo.data.CollectionEvent
 import com.example.brusselscollectiondemo.data.CollectionSchedule
 import com.example.brusselscollectiondemo.data.WasteType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.*
+import okhttp3.FormBody
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.LocalDate
@@ -24,60 +28,109 @@ class RealBrusselsScraper {
 
     suspend fun fetch(query: AddressQuery): Result<CollectionSchedule> = withContext(Dispatchers.IO) {
         runCatching {
+            val validationUrl = "$baseUrl/GetAddress.aspx".toHttpUrl().newBuilder()
+                .addQueryParameter("rue", query.street)
+                .addQueryParameter("numero", query.number)
+                .addQueryParameter("zip", query.postalCode)
+                .addQueryParameter("Lang", "fr")
+                .addQueryParameter("operation", "VALIDATION")
+                .build()
 
-            // 1. Validation adresse
-            val validationUrl = "$baseUrl/GetAddress.aspx" +
-                    "?rue=${query.street}" +
-                    "&numero=${query.number}" +
-                    "&zip=${query.postalCode}" +
-                    "&Lang=fr" +
-                    "&operation=VALIDATION"
+            val validationRequest = Request.Builder()
+                .url(validationUrl)
+                .header("Accept", "application/json, text/plain, */*")
+                .header("User-Agent", "Mozilla/5.0 (Android)")
+                .build()
 
-            val validationResponse = client.newCall(
-                Request.Builder().url(validationUrl).build()
-            ).execute().use {
-                JSONObject(it.body?.string() ?: "{}")
+            val validationText = client.newCall(validationRequest).execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                Log.d("SCRAPER", "VALIDATION URL = $validationUrl")
+                Log.d("SCRAPER", "VALIDATION CODE = ${response.code}")
+                Log.d("SCRAPER", "VALIDATION BODY = ${body.take(1000)}")
+                check(response.isSuccessful) { "Erreur validation HTTP ${response.code}" }
+                body
             }
 
-            // ⚠️ IMPORTANT : extraire les bons champs depuis la réponse JSON
-            val streetId = validationResponse.optString("StreetId")
-            val houseNumberId = validationResponse.optString("HouseNumberId")
+            check(!validationText.trimStart().startsWith("<!DOCTYPE")) {
+                "La validation renvoie du HTML au lieu de JSON. Réponse: ${validationText.take(200)}"
+            }
 
-            check(streetId.isNotEmpty()) { "Adresse invalide" }
+            val validationJson = JSONObject(validationText)
 
-            // 2. Appel calendrier
-            val body = FormBody.Builder()
+            // Affiche le JSON exact pour qu'on adapte les clés ensuite
+            Log.d("SCRAPER", "VALIDATION JSON = ${validationJson.toString(2)}")
+
+            val streetId = validationJson.optString("StreetId")
+                .ifBlank { validationJson.optString("streetId") }
+
+            val houseNumberId = validationJson.optString("HouseNumberId")
+                .ifBlank { validationJson.optString("houseNumberId") }
+
+            check(streetId.isNotBlank()) {
+                "Adresse non reconnue. JSON validation = ${validationJson.toString(2)}"
+            }
+
+            val calendarBody = FormBody.Builder()
                 .add("streetId", streetId)
                 .add("houseNumberId", houseNumberId)
                 .add("lang", "fr")
                 .build()
 
-            val calendarResponse = client.newCall(
-                Request.Builder()
-                    .url("$baseUrl/GetCalendarWeb.aspx")
-                    .post(body)
-                    .build()
-            ).execute().use {
-                JSONObject(it.body?.string() ?: "{}")
+            val calendarRequest = Request.Builder()
+                .url("$baseUrl/GetCalendarWeb.aspx")
+                .post(calendarBody)
+                .header("Accept", "application/json, text/plain, */*")
+                .header("User-Agent", "Mozilla/5.0 (Android)")
+                .build()
+
+            val calendarText = client.newCall(calendarRequest).execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                Log.d("SCRAPER", "CALENDAR CODE = ${response.code}")
+                Log.d("SCRAPER", "CALENDAR BODY = ${body.take(1500)}")
+                check(response.isSuccessful) { "Erreur calendrier HTTP ${response.code}" }
+                body
             }
 
-            val eventsJson = calendarResponse.optJSONArray("Data") ?: JSONArray()
+            check(!calendarText.trimStart().startsWith("<!DOCTYPE")) {
+                "Le calendrier renvoie du HTML au lieu de JSON. Réponse: ${calendarText.take(200)}"
+            }
 
-            val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+            val calendarJson = JSONObject(calendarText)
+            Log.d("SCRAPER", "CALENDAR JSON = ${calendarJson.toString(2)}")
+
+            val dataArray = when {
+                calendarJson.has("Data") -> calendarJson.optJSONArray("Data") ?: JSONArray()
+                calendarJson.has("data") -> calendarJson.optJSONArray("data") ?: JSONArray()
+                else -> JSONArray()
+            }
+
+            val formatter1 = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+            val formatter2 = DateTimeFormatter.ofPattern("dd/MM/yyyy")
 
             val events = mutableListOf<CollectionEvent>()
 
-            for (i in 0 until eventsJson.length()) {
-                val item = eventsJson.getJSONObject(i)
+            for (i in 0 until dataArray.length()) {
+                val item = dataArray.getJSONObject(i)
 
-                val date = LocalDate.parse(item.getString("Date"), formatter)
-                val type = item.optString("Type")
+                val rawDate = item.optString("Date")
+                    .ifBlank { item.optString("date") }
+
+                val rawType = item.optString("Type")
+                    .ifBlank { item.optString("type") }
+                    .ifBlank { item.optString("Label") }
+
+                val date = runCatching { LocalDate.parse(rawDate, formatter1) }
+                    .recoverCatching { LocalDate.parse(rawDate, formatter2) }
+                    .getOrElse {
+                        continue
+                    }
 
                 val wasteType = when {
-                    type.contains("white", true) -> WasteType.WHITE
-                    type.contains("blue", true) -> WasteType.BLUE
-                    type.contains("yellow", true) -> WasteType.YELLOW
-                    type.contains("organic", true) -> WasteType.ORGANIC
+                    rawType.contains("blanc", true) || rawType.contains("white", true) -> WasteType.WHITE
+                    rawType.contains("bleu", true) || rawType.contains("blue", true) -> WasteType.BLUE
+                    rawType.contains("jaune", true) || rawType.contains("yellow", true) -> WasteType.YELLOW
+                    rawType.contains("organ", true) || rawType.contains("orange", true) || rawType.contains("vert", true) -> WasteType.ORGANIC
+                    rawType.contains("encombr", true) || rawType.contains("bulky", true) -> WasteType.BULKY
                     else -> WasteType.UNKNOWN
                 }
 
@@ -85,14 +138,18 @@ class RealBrusselsScraper {
                     CollectionEvent(
                         date = date,
                         wasteType = wasteType,
-                        label = type
+                        label = rawType.ifBlank { item.toString() }
                     )
                 )
             }
 
+            check(events.isNotEmpty()) {
+                "Aucune collecte trouvée. JSON calendrier = ${calendarJson.toString(2)}"
+            }
+
             CollectionSchedule(
                 query = query,
-                events = events
+                events = events.sortedBy { it.date }
             )
         }
     }
