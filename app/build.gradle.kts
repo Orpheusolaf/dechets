@@ -48,4 +48,3 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling:1.6.8")
 }
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
