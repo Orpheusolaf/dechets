@@ -50,16 +50,13 @@ val calendarJson = callCalendar()
 
             Log.d("SCRAPER", "CALENDAR JSON = ${calendarJson.toString(2)}")
 
-            val events = extractCalendarEvents(calendarJson)
+val events = extractCalendarEvents(calendarJson)
 
-            check(events.isNotEmpty()) {
-                "Aucune collecte trouvée. Réponse calendrier: ${calendarJson.toString(2)}"
-            }
+CollectionSchedule(
+    query = query,
+    events = events.sortedBy { it.date }
+)
 
-            CollectionSchedule(
-                query = query,
-                events = events.sortedBy { it.date }
-            )
         }
     }
 
