@@ -46,10 +46,7 @@ check(!validatedId.isNullOrBlank()) {
     "id introuvable dans VALIDATION: ${validationJson.toString(2)}"
 }
 
-val calendarJson = callCalendar(
-    validatedId = validatedId,
-    lang = "fr"
-)
+val calendarJson = callCalendar()
 
             Log.d("SCRAPER", "CALENDAR JSON = ${calendarJson.toString(2)}")
 
@@ -116,23 +113,27 @@ val calendarJson = callCalendar(
         return parseJsonLenient(text)
     }
 
-private fun callCalendar(
-    validatedId: String,
-    lang: String
-): JSONObject {
-    val form = FormBody.Builder()
-        .add("id", validatedId)
-        .add("Lang", lang.uppercase())
+private fun callCalendar(): JSONObject {
+    val body = MultipartBody.Builder()
+        .setType(MultipartBody.FORM)
+        .addFormDataPart("rue", "Rue Franklin")
+        .addFormDataPart("numero", "1")
+        .addFormDataPart("zip", "1000")
+        .addFormDataPart("commune", "Bruxelles")
+        .addFormDataPart("id", "2112530")
+        .addFormDataPart("Lang", "FR")
+        .addFormDataPart("operation", "VALIDATION")
         .build()
 
     val request = Request.Builder()
-        .url("https://formsv2.arp-gan.eu/GetCalendarWeb.aspx")
-        .post(form)
+        .url("https://formsv2.arp-gan.eu/GetCalendarv5//GetCalendarWeb.aspx")
+        .post(body)
         .header("Accept", "application/json, text/plain, */*")
         .header(
             "User-Agent",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0"
         )
+        .header("Origin", "https://formsv2.arp-gan.eu")
         .header("Referer", "https://formsv2.arp-gan.eu/CalendarV5/?Language=FR")
         .build()
 
@@ -140,7 +141,7 @@ private fun callCalendar(
         val responseText = response.body?.string().orEmpty()
 
         Log.d("SCRAPER", "CALENDAR CODE = ${response.code}")
-        Log.d("SCRAPER", "CALENDAR BODY = ${responseText.take(2000)}")
+        Log.d("SCRAPER", "CALENDAR BODY = ${responseText.take(3000)}")
 
         check(response.isSuccessful) {
             "Erreur calendrier HTTP ${response.code}: ${responseText.take(300)}"
