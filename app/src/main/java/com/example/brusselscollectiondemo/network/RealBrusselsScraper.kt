@@ -37,27 +37,19 @@ class RealBrusselsScraper {
 
             Log.d("SCRAPER", "VALIDATION JSON = ${validationJson.toString(2)}")
 
-            val streetId = extractString(
-                validationJson,
-                "StreetId", "streetId", "IdStreet", "idStreet", "Street_ID",
-                "ID_STREET", "streetID"
-            )
+val dataArray = validationJson.optJSONArray("data")
+val firstItem = if (dataArray != null && dataArray.length() > 0) dataArray.optJSONObject(0) else null
 
-            val houseNumberId = extractString(
-                validationJson,
-                "HouseNumberId", "houseNumberId", "IdHouseNumber", "idHouseNumber",
-                "HouseNumber_ID", "ID_HOUSENUMBER", "houseNumberID"
-            )
+val validatedId = firstItem?.optString("Value")
 
-            check(!streetId.isNullOrBlank()) {
-                "streetId introuvable dans VALIDATION: ${validationJson.toString(2)}"
-            }
+check(!validatedId.isNullOrBlank()) {
+    "id introuvable dans VALIDATION: ${validationJson.toString(2)}"
+}
 
-            val calendarJson = callCalendar(
-                streetId = streetId,
-                houseNumberId = houseNumberId,
-                lang = "fr"
-            )
+val calendarJson = callCalendar(
+    validatedId = validatedId,
+    lang = "fr"
+)
 
             Log.d("SCRAPER", "CALENDAR JSON = ${calendarJson.toString(2)}")
 
@@ -124,52 +116,45 @@ class RealBrusselsScraper {
         return parseJsonLenient(text)
     }
 
-    private fun callCalendar(
-        streetId: String,
-        houseNumberId: String?,
-        lang: String
-    ): JSONObject {
-        val form = FormBody.Builder()
-            .add("streetId", streetId)
-            .add("lang", lang)
-            .apply {
-                if (!houseNumberId.isNullOrBlank()) {
-                    add("houseNumberId", houseNumberId)
-                }
-            }
-            .build()
+private fun callCalendar(
+    validatedId: String,
+    lang: String
+): JSONObject {
+    val form = FormBody.Builder()
+        .add("id", validatedId)
+        .add("Lang", lang.uppercase())
+        .build()
 
-        val request = Request.Builder()
-            .url("https://formsv2.arp-gan.eu/GetCalendarWeb.aspx")
-            .post(form)
-            .header("Accept", "application/json, text/plain, */*")
-            .header(
-                "User-Agent",
-                "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
-            )
-            .header("Referer", "https://www.arp-gan.be/")
-            .header("Origin", "https://www.arp-gan.be")
-            .build()
+    val request = Request.Builder()
+        .url("https://formsv2.arp-gan.eu/GetCalendarWeb.aspx")
+        .post(form)
+        .header("Accept", "application/json, text/plain, */*")
+        .header(
+            "User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0"
+        )
+        .header("Referer", "https://formsv2.arp-gan.eu/CalendarV5/?Language=FR")
+        .build()
 
-        val text = client.newCall(request).execute().use { response ->
-            val responseText = response.body?.string().orEmpty()
+    val text = client.newCall(request).execute().use { response ->
+        val responseText = response.body?.string().orEmpty()
 
-            Log.d("SCRAPER", "CALENDAR CODE = ${response.code}")
-            Log.d("SCRAPER", "CALENDAR BODY = ${responseText.take(2000)}")
+        Log.d("SCRAPER", "CALENDAR CODE = ${response.code}")
+        Log.d("SCRAPER", "CALENDAR BODY = ${responseText.take(2000)}")
 
-            check(response.isSuccessful) {
-                "Erreur calendrier HTTP ${response.code}: ${responseText.take(300)}"
-            }
-
-            check(!responseText.trimStart().startsWith("<!DOCTYPE")) {
-                "Le calendrier renvoie du HTML au lieu de JSON: ${responseText.take(300)}"
-            }
-
-            responseText
+        check(response.isSuccessful) {
+            "Erreur calendrier HTTP ${response.code}: ${responseText.take(300)}"
         }
 
-        return parseJsonLenient(text)
+        check(!responseText.trimStart().startsWith("<!DOCTYPE")) {
+            "Le calendrier renvoie du HTML au lieu de JSON: ${responseText.take(300)}"
+        }
+
+        responseText
     }
+
+    return parseJsonLenient(text)
+}
 
     private fun extractCalendarEvents(json: JSONObject): List<CollectionEvent> {
         val array = findFirstArray(
