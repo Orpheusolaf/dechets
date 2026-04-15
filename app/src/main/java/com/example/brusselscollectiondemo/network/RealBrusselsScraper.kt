@@ -48,15 +48,29 @@ check(!validatedId.isNullOrBlank()) {
 
 val calendarJson = callCalendar()
 
+val calendarImageUrl = firstNonBlank(
+    calendarJson.optString("img_ramassage"),
+    calendarJson.optString("Img_ramassage"),
+    calendarJson.optString("image"),
+    calendarJson.optString("img")
+)
+
+val calendarPdfUrl = firstNonBlank(
+    calendarJson.optString("pdf"),
+    calendarJson.optString("Pdf"),
+    calendarJson.optString("pdf_ramassage"),
+    calendarJson.optString("calendarPdf")
+)
             Log.d("SCRAPER", "CALENDAR JSON = ${calendarJson.toString(2)}")
 
 val events = extractCalendarEvents(calendarJson)
 
 CollectionSchedule(
     query = query,
-    events = events.sortedBy { it.date }
+    events = events.sortedBy { it.date },
+    calendarImageUrl = calendarImageUrl,
+    calendarPdfUrl = calendarPdfUrl
 )
-
         }
     }
 
