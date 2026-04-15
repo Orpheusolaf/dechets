@@ -126,13 +126,19 @@ fun CollectionApp(viewModel: CollectionViewModel = viewModel()) {
                         Spacer(modifier = Modifier.height(8.dp))
 
                         AsyncImage(
-                            model = url,
-                            contentDescription = "Calendrier",
-                            modifier = Modifier.fillMaxWidth(),
-                            onError = {
-                                Log.e("IMAGE", "Erreur chargement image")
-                            }
-                        )
+    model = url,
+    contentDescription = "Calendrier",
+    modifier = Modifier.fillMaxWidth(),
+    onLoading = {
+        Log.d("IMAGE", "Chargement...")
+    },
+    onSuccess = {
+        Log.d("IMAGE", "Image OK")
+    },
+    onError = {
+        Log.e("IMAGE", "Erreur chargement image")
+    }
+)
                     }
 
                     Text("Résultats")
