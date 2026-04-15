@@ -14,6 +14,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import androidx.compose.ui.platform.LocalContext
 import com.example.brusselscollectiondemo.ui.CollectionViewModel
 
 class MainActivity : ComponentActivity() {
@@ -30,12 +32,15 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CollectionApp(viewModel: CollectionViewModel = viewModel()) {
+
     val uiState by viewModel.uiState.collectAsState()
 
     var street by remember { mutableStateOf("") }
     var number by remember { mutableStateOf("") }
     var postalCode by remember { mutableStateOf("1000") }
     var municipality by remember { mutableStateOf("Bruxelles") }
+
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
@@ -90,7 +95,8 @@ fun CollectionApp(viewModel: CollectionViewModel = viewModel()) {
                         municipality
                     )
                 },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                enabled = street.isNotBlank() && number.isNotBlank()
             ) {
                 Text("Rechercher")
             }
@@ -116,38 +122,54 @@ fun CollectionApp(viewModel: CollectionViewModel = viewModel()) {
                     val rawUrl = uiState.schedule!!.calendarImageUrl
                     val cleanUrl = rawUrl?.replace("\\/", "/")
 
-                    Text("Calendrier trouvé")
+                    Text(
+                        text = "Calendrier trouvé",
+                        style = MaterialTheme.typography.titleMedium
+                    )
 
                     cleanUrl?.let { url ->
 
-                        // DEBUG
+                        // DEBUG URL
                         Text(url)
 
                         Spacer(modifier = Modifier.height(8.dp))
 
                         AsyncImage(
-    model = url,
-    contentDescription = "Calendrier",
-    modifier = Modifier.fillMaxWidth(),
-    onLoading = {
-        Log.d("IMAGE", "Chargement...")
-    },
-    onSuccess = {
-        Log.d("IMAGE", "Image OK")
-    },
-    onError = {
-        Log.e("IMAGE", "Erreur chargement image")
-    }
-)
+                            model = ImageRequest.Builder(context)
+                                .data(url)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = "Calendrier de collecte",
+                            modifier = Modifier.fillMaxWidth(),
+                            onLoading = {
+                                Log.d("IMAGE", "Chargement image...")
+                            },
+                            onSuccess = {
+                                Log.d("IMAGE", "Image chargée avec succès")
+                            },
+                            onError = {
+                                Log.e("IMAGE", "Erreur chargement image")
+                            }
+                        )
                     }
 
-                    Text("Résultats")
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                    LazyColumn {
+                    Text(
+                        text = "Résultats",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         items(uiState.schedule!!.events.take(20)) { event ->
-                            Card {
+                            Card(modifier = Modifier.fillMaxWidth()) {
                                 Column(modifier = Modifier.padding(16.dp)) {
-                                    Text(event.date.toString())
+                                    Text(
+                                        text = event.date.toString(),
+                                        style = MaterialTheme.typography.titleSmall
+                                    )
                                     Text(event.wasteType.name)
                                     Text(event.label)
                                 }
