@@ -41,11 +41,25 @@ class CollectionViewModel(
             val result = repository.loadByAddress(query)
 
             _uiState.value = result.fold(
-                onSuccess = { CollectionUiState(schedule = it) },
-                onFailure = {
-                    CollectionUiState(error = it.message ?: "Erreur de récupération")
+                onSuccess = { schedule ->
+                    CollectionUiState(
+                        isLoading = false,
+                        schedule = schedule,
+                        error = null
+                    )
+                },
+                onFailure = { throwable ->
+                    CollectionUiState(
+                        isLoading = false,
+                        schedule = null,
+                        error = throwable.message ?: "Erreur de récupération"
+                    )
                 }
             )
         }
+    }
+
+    fun clearResult() {
+        _uiState.value = CollectionUiState()
     }
 }
