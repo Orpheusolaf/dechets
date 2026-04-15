@@ -8,7 +8,7 @@ import com.example.brusselscollectiondemo.data.WasteType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
-import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -24,61 +24,35 @@ class RealBrusselsScraper {
         .readTimeout(20, TimeUnit.SECONDS)
         .build()
 
-    private val baseUrl = "https://formsv2.arp-gan.eu"
-
     suspend fun fetch(query: AddressQuery): Result<CollectionSchedule> = withContext(Dispatchers.IO) {
         runCatching {
-            val normalizedStreet = query.street.trim()
-
-            // 1) SEARCH
-            val searchJson = callGetAddress(
-                rue = normalizedStreet,
-                numero = null,
-                zip = null,
-                operation = "SEARCH"
-            )
-
-            Log.d("SCRAPER", "SEARCH JSON = ${searchJson.toString(2)}")
-
-            val selectedStreet = extractBestStreetLabel(searchJson, normalizedStreet)
-                ?: error("Aucune rue trouvée pour '$normalizedStreet'")
-
-            // 2) ADRESS_NUMBER_RANGE
-            val numberRangeJson = callGetAddress(
-                rue = selectedStreet,
-                numero = null,
-                zip = query.postalCode,
-                operation = "ADRESS_NUMBER_RANGE"
-            )
-
-            Log.d("SCRAPER", "NUMBER_RANGE JSON = ${numberRangeJson.toString(2)}")
-
-            val validatedNumber = extractMatchingNumber(numberRangeJson, query.number)
-                ?: query.number
-
-            // 3) VALIDATION
-            val validationJson = callGetAddress(
-                rue = selectedStreet,
-                numero = validatedNumber,
-                zip = query.postalCode,
-                operation = "VALIDATION"
+            // Test volontairement figé sur l'adresse qui marche côté site
+            val validationJson = callValidation(
+                rue = "Rue Franklin",
+                numero = "1",
+                zip = "1000",
+                commune = "Bruxelles",
+                id = "2112530"
             )
 
             Log.d("SCRAPER", "VALIDATION JSON = ${validationJson.toString(2)}")
 
-            val streetId = extractString(validationJson,
-                "StreetId", "streetId", "IdStreet", "idStreet", "Street_ID"
+            val streetId = extractString(
+                validationJson,
+                "StreetId", "streetId", "IdStreet", "idStreet", "Street_ID",
+                "ID_STREET", "streetID"
             )
 
-            val houseNumberId = extractString(validationJson,
-                "HouseNumberId", "houseNumberId", "IdHouseNumber", "idHouseNumber", "HouseNumber_ID"
+            val houseNumberId = extractString(
+                validationJson,
+                "HouseNumberId", "houseNumberId", "IdHouseNumber", "idHouseNumber",
+                "HouseNumber_ID", "ID_HOUSENUMBER", "houseNumberID"
             )
 
             check(!streetId.isNullOrBlank()) {
-                "streetId introuvable dans la réponse VALIDATION"
+                "streetId introuvable dans VALIDATION: ${validationJson.toString(2)}"
             }
 
-            // houseNumberId peut parfois être absent selon la structure réelle
             val calendarJson = callCalendar(
                 streetId = streetId,
                 houseNumberId = houseNumberId,
@@ -90,63 +64,64 @@ class RealBrusselsScraper {
             val events = extractCalendarEvents(calendarJson)
 
             check(events.isNotEmpty()) {
-                "Aucune collecte trouvée dans la réponse calendrier"
+                "Aucune collecte trouvée. Réponse calendrier: ${calendarJson.toString(2)}"
             }
 
             CollectionSchedule(
-                query = query.copy(street = selectedStreet, number = validatedNumber),
+                query = query,
                 events = events.sortedBy { it.date }
             )
         }
     }
 
-    private fun callGetAddress(
+    private fun callValidation(
         rue: String,
-        numero: String?,
-        zip: String?,
-        operation: String
+        numero: String,
+        zip: String,
+        commune: String,
+        id: String
     ): JSONObject {
-        val urlBuilder = "$baseUrl/GetAddress.aspx".toHttpUrl().newBuilder()
-            .addQueryParameter("rue", rue)
-            .addQueryParameter("Lang", "fr")
-            .addQueryParameter("operation", operation)
-
-        if (!numero.isNullOrBlank()) {
-            urlBuilder.addQueryParameter("numero", numero)
-        }
-
-        if (!zip.isNullOrBlank()) {
-            urlBuilder.addQueryParameter("zip", zip)
-        }
-
-        val url = urlBuilder.build()
+        val body = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("rue", rue)
+            .addFormDataPart("numero", numero)
+            .addFormDataPart("zip", zip)
+            .addFormDataPart("commune", commune)
+            .addFormDataPart("id", id)
+            .addFormDataPart("Lang", "FR")
+            .addFormDataPart("operation", "VALIDATION")
+            .build()
 
         val request = Request.Builder()
-            .url(url)
+            .url("https://formsv2.arp-gan.eu/GetAddress.aspx")
+            .post(body)
             .header("Accept", "application/json, text/plain, */*")
-            .header("User-Agent", browserLikeUserAgent())
+            .header(
+                "User-Agent",
+                "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
+            )
             .header("Referer", "https://www.arp-gan.be/")
             .header("Origin", "https://www.arp-gan.be")
             .build()
 
-        val body = client.newCall(request).execute().use { response ->
-            val text = response.body?.string().orEmpty()
-            Log.d("SCRAPER", "$operation URL = $url")
-            Log.d("SCRAPER", "$operation CODE = ${response.code}")
-            Log.d("SCRAPER", "$operation BODY = ${text.take(1500)}")
+        val text = client.newCall(request).execute().use { response ->
+            val responseText = response.body?.string().orEmpty()
+
+            Log.d("SCRAPER", "VALIDATION CODE = ${response.code}")
+            Log.d("SCRAPER", "VALIDATION BODY = ${responseText.take(2000)}")
 
             check(response.isSuccessful) {
-                "Erreur $operation HTTP ${response.code}"
+                "Erreur validation HTTP ${response.code}: ${responseText.take(300)}"
             }
 
-            check(!text.trimStart().startsWith("<!DOCTYPE")) {
-                "$operation renvoie du HTML au lieu de JSON"
+            check(!responseText.trimStart().startsWith("<!DOCTYPE")) {
+                "La validation renvoie du HTML au lieu de JSON: ${responseText.take(300)}"
             }
 
-            text
+            responseText
         }
 
-        return parseJsonLenient(body)
+        return parseJsonLenient(text)
     }
 
     private fun callCalendar(
@@ -154,79 +129,56 @@ class RealBrusselsScraper {
         houseNumberId: String?,
         lang: String
     ): JSONObject {
-        val formBuilder = FormBody.Builder()
+        val form = FormBody.Builder()
             .add("streetId", streetId)
             .add("lang", lang)
-
-        if (!houseNumberId.isNullOrBlank()) {
-            formBuilder.add("houseNumberId", houseNumberId)
-        }
+            .apply {
+                if (!houseNumberId.isNullOrBlank()) {
+                    add("houseNumberId", houseNumberId)
+                }
+            }
+            .build()
 
         val request = Request.Builder()
-            .url("$baseUrl/GetCalendarWeb.aspx")
-            .post(formBuilder.build())
+            .url("https://formsv2.arp-gan.eu/GetCalendarWeb.aspx")
+            .post(form)
             .header("Accept", "application/json, text/plain, */*")
-            .header("User-Agent", browserLikeUserAgent())
+            .header(
+                "User-Agent",
+                "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
+            )
             .header("Referer", "https://www.arp-gan.be/")
             .header("Origin", "https://www.arp-gan.be")
             .build()
 
-        val body = client.newCall(request).execute().use { response ->
-            val text = response.body?.string().orEmpty()
+        val text = client.newCall(request).execute().use { response ->
+            val responseText = response.body?.string().orEmpty()
+
             Log.d("SCRAPER", "CALENDAR CODE = ${response.code}")
-            Log.d("SCRAPER", "CALENDAR BODY = ${text.take(2000)}")
+            Log.d("SCRAPER", "CALENDAR BODY = ${responseText.take(2000)}")
 
             check(response.isSuccessful) {
-                "Erreur calendrier HTTP ${response.code}"
+                "Erreur calendrier HTTP ${response.code}: ${responseText.take(300)}"
             }
 
-            check(!text.trimStart().startsWith("<!DOCTYPE")) {
-                "Le calendrier renvoie du HTML au lieu de JSON"
+            check(!responseText.trimStart().startsWith("<!DOCTYPE")) {
+                "Le calendrier renvoie du HTML au lieu de JSON: ${responseText.take(300)}"
             }
 
-            text
+            responseText
         }
 
-        return parseJsonLenient(body)
-    }
-
-    private fun extractBestStreetLabel(json: JSONObject, typedStreet: String): String? {
-        val candidates = mutableListOf<String>()
-
-        collectAllStrings(json, candidates)
-
-        val normalizedTyped = typedStreet.trim().lowercase()
-
-        return candidates
-            .distinct()
-            .firstOrNull { candidate ->
-                val c = candidate.lowercase()
-                c.contains(normalizedTyped) && (
-                    c.contains("rue") ||
-                    c.contains("avenue") ||
-                    c.contains("chaussée") ||
-                    c.contains("boulevard") ||
-                    c.contains("place")
-                )
-            }
-            ?: candidates.distinct().firstOrNull()
-    }
-
-    private fun extractMatchingNumber(json: JSONObject, requestedNumber: String): String? {
-        val candidates = mutableListOf<String>()
-        collectAllStrings(json, candidates)
-
-        return candidates
-            .map { it.trim() }
-            .firstOrNull { it == requestedNumber }
+        return parseJsonLenient(text)
     }
 
     private fun extractCalendarEvents(json: JSONObject): List<CollectionEvent> {
-        val array = findFirstArray(json, "Data", "data", "Items", "items", "Calendar", "calendar")
-            ?: return emptyList()
+        val array = findFirstArray(
+            json,
+            "Data", "data", "Items", "items", "Calendar", "calendar"
+        ) ?: return emptyList()
 
-        val formatterIso = DateTimeFormatter.ofPattern("yyyy-MM-dd")
-        val formatterFr = DateTimeFormatter.ofPattern("dd/MM/yyyy")
+        val isoFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+        val frFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
 
         val events = mutableListOf<CollectionEvent>()
 
@@ -249,7 +201,7 @@ class RealBrusselsScraper {
                 item.optString("wasteType")
             ) ?: item.toString()
 
-            val date = parseDate(rawDate, formatterIso, formatterFr) ?: continue
+            val date = parseDate(rawDate, isoFormatter, frFormatter) ?: continue
 
             events.add(
                 CollectionEvent(
@@ -293,11 +245,10 @@ class RealBrusselsScraper {
 
     private fun parseJsonLenient(text: String): JSONObject {
         val trimmed = text.trim()
-
         return when {
             trimmed.startsWith("{") -> JSONObject(trimmed)
             trimmed.startsWith("[") -> JSONObject().put("data", JSONArray(trimmed))
-            else -> error("Réponse non JSON: ${trimmed.take(200)}")
+            else -> error("Réponse non JSON: ${trimmed.take(300)}")
         }
     }
 
@@ -345,34 +296,7 @@ class RealBrusselsScraper {
         return null
     }
 
-    private fun collectAllStrings(json: JSONObject, out: MutableList<String>) {
-        val keys = json.keys()
-        while (keys.hasNext()) {
-            val key = keys.next()
-            val value = json.opt(key)
-            when (value) {
-                is String -> if (value.isNotBlank()) out.add(value)
-                is JSONObject -> collectAllStrings(value, out)
-                is JSONArray -> collectAllStrings(value, out)
-            }
-        }
-    }
-
-    private fun collectAllStrings(array: JSONArray, out: MutableList<String>) {
-        for (i in 0 until array.length()) {
-            when (val value = array.opt(i)) {
-                is String -> if (value.isNotBlank()) out.add(value)
-                is JSONObject -> collectAllStrings(value, out)
-                is JSONArray -> collectAllStrings(value, out)
-            }
-        }
-    }
-
     private fun firstNonBlank(vararg values: String?): String? {
         return values.firstOrNull { !it.isNullOrBlank() }
-    }
-
-    private fun browserLikeUserAgent(): String {
-        return "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
     }
 }
