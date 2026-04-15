@@ -131,6 +131,23 @@ fun CollectionApp(viewModel: CollectionViewModel = viewModel()) {
                 }
 
                 uiState.schedule != null -> {
+                    uiState.schedule?.calendarImageUrl?.let { url ->
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Calendrier trouvé")
+            Text(url)
+        }
+    }
+}
+
+uiState.schedule?.calendarPdfUrl?.let { url ->
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("PDF calendrier")
+            Text(url)
+        }
+    }
+}
                     Text(
                         text = "Résultats",
                         style = MaterialTheme.typography.titleMedium
