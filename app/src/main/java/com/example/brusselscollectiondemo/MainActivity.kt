@@ -6,6 +6,8 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -13,10 +15,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -30,11 +34,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.brusselscollectiondemo.ui.CollectionViewModel
@@ -43,6 +52,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
+import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,118 +75,114 @@ fun CollectionApp(viewModel: CollectionViewModel = viewModel()) {
     var postalCode by remember { mutableStateOf("1000") }
     var municipality by remember { mutableStateOf("Bruxelles") }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(title = { Text("Collectes Bruxelles") })
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                text = "Recherche par adresse",
-                style = MaterialTheme.typography.titleMedium
-            )
+    val hasResult = uiState.schedule?.calendarImageUrl != null
 
-            OutlinedTextField(
-                value = street,
-                onValueChange = { street = it },
-                label = { Text("Rue") },
-                modifier = Modifier.fillMaxWidth()
-            )
+    if (hasResult) {
+        val rawUrl = uiState.schedule!!.calendarImageUrl
+        val cleanUrl = rawUrl?.replace("\\/", "/")
 
-            OutlinedTextField(
-                value = number,
-                onValueChange = { number = it },
-                label = { Text("Numéro") },
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            OutlinedTextField(
-                value = postalCode,
-                onValueChange = { postalCode = it },
-                label = { Text("Code postal") },
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            OutlinedTextField(
-                value = municipality,
-                onValueChange = { municipality = it },
-                label = { Text("Commune") },
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Button(
-                onClick = {
-                    viewModel.search(
-                        street = street,
-                        number = number,
-                        postalCode = postalCode,
-                        municipality = municipality
-                    )
-                },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = street.isNotBlank() && number.isNotBlank()
-            ) {
-                Text("Rechercher")
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("Calendrier de collecte") }
+                )
             }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            when {
-                uiState.isLoading -> {
-                    CircularProgressIndicator()
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(16.dp)
+                    .navigationBarsPadding(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Button(
+                    onClick = {
+                        // retour au formulaire
+                        viewModel.clearResult()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Nouvelle recherche")
                 }
 
-                uiState.error != null -> {
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            text = uiState.error ?: "",
-                            modifier = Modifier.padding(16.dp)
+                cleanUrl?.let { url ->
+                    ZoomableRemoteCalendarImage(url = url)
+                } ?: run {
+                    Text("Aucun calendrier trouvé")
+                }
+            }
+        }
+    } else {
+        Scaffold(
+            topBar = {
+                TopAppBar(title = { Text("Collectes Bruxelles") })
+            }
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Recherche par adresse",
+                    style = MaterialTheme.typography.titleMedium
+                )
+
+                OutlinedTextField(
+                    value = street,
+                    onValueChange = { street = it },
+                    label = { Text("Rue") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = number,
+                    onValueChange = { number = it },
+                    label = { Text("Numéro") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = postalCode,
+                    onValueChange = { postalCode = it },
+                    label = { Text("Code postal") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = municipality,
+                    onValueChange = { municipality = it },
+                    label = { Text("Commune") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Button(
+                    onClick = {
+                        viewModel.search(
+                            street = street,
+                            number = number,
+                            postalCode = postalCode,
+                            municipality = municipality
                         )
-                    }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = street.isNotBlank() && number.isNotBlank()
+                ) {
+                    Text("Rechercher")
                 }
 
-                uiState.schedule != null -> {
-                    val rawUrl = uiState.schedule!!.calendarImageUrl
-                    val cleanUrl = rawUrl?.replace("\\/", "/")
+                when {
+                    uiState.isLoading -> CircularProgressIndicator()
 
-                    Text(
-                        text = "Calendrier trouvé",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-
-                    cleanUrl?.let { url ->
-                        Text(url)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        RemoteCalendarImage(url = url)
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Text(
-                        text = "Résultats",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(uiState.schedule!!.events.take(20)) { event ->
-                            Card(modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.padding(16.dp)) {
-                                    Text(
-                                        text = event.date.toString(),
-                                        style = MaterialTheme.typography.titleSmall
-                                    )
-                                    Text(text = event.wasteType.name)
-                                    Text(text = event.label)
-                                }
-                            }
+                    uiState.error != null -> {
+                        Card(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = uiState.error ?: "",
+                                modifier = Modifier.padding(16.dp)
+                            )
                         }
                     }
                 }
@@ -186,10 +192,14 @@ fun CollectionApp(viewModel: CollectionViewModel = viewModel()) {
 }
 
 @Composable
-private fun RemoteCalendarImage(url: String) {
+private fun ZoomableRemoteCalendarImage(url: String) {
     var isLoading by remember(url) { mutableStateOf(true) }
     var error by remember(url) { mutableStateOf<String?>(null) }
     var bitmap by remember(url) { mutableStateOf<android.graphics.Bitmap?>(null) }
+
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offsetX by remember { mutableFloatStateOf(0f) }
+    var offsetY by remember { mutableFloatStateOf(0f) }
 
     LaunchedEffect(url) {
         isLoading = true
@@ -209,22 +219,45 @@ private fun RemoteCalendarImage(url: String) {
         }
     }
 
-    when {
-        isLoading -> CircularProgressIndicator()
-        error != null -> Text("Erreur image: $error")
-        bitmap != null -> 
-      Column(
-    modifier = Modifier
-        .fillMaxWidth()
-        .height(800.dp)
-        .verticalScroll(rememberScrollState())
-) {
-    Image(
-        bitmap = bitmap!!.asImageBitmap(),
-        contentDescription = "Calendrier",
-        modifier = Modifier.fillMaxWidth()
-    )
-      }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+        contentAlignment = Alignment.TopCenter
+    ) {
+        when {
+            isLoading -> CircularProgressIndicator()
+
+            error != null -> Text("Erreur image: $error")
+
+            bitmap != null -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Image(
+                        bitmap = bitmap!!.asImageBitmap(),
+                        contentDescription = "Calendrier de collecte",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .pointerInput(Unit) {
+                                detectTransformGestures { _, pan, zoom, _ ->
+                                    scale = (scale * zoom).coerceIn(1f, 5f)
+                                    offsetX += pan.x
+                                    offsetY += pan.y
+                                }
+                            }
+                            .graphicsLayer(
+                                scaleX = scale,
+                                scaleY = scale,
+                                translationX = offsetX,
+                                translationY = offsetY
+                            )
+                    )
+                }
+            }
+        }
     }
 }
 
