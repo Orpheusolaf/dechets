@@ -135,7 +135,13 @@ fun CollectionApp(viewModel: CollectionViewModel = viewModel()) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text("Calendrier trouvé")
-            Text(url)
+import coil.compose.AsyncImage
+
+AsyncImage(
+    model = url,
+    contentDescription = "Calendrier",
+    modifier = Modifier.fillMaxWidth()
+)
         }
     }
 }
