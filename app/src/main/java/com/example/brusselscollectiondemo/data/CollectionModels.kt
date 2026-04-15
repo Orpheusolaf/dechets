@@ -20,5 +20,7 @@ data class CollectionEvent(
 data class CollectionSchedule(
     val query: AddressQuery,
     val events: List<CollectionEvent>,
-    val source: String = "Bruxelles-Propreté"
+    val source: String = "Bruxelles-Propreté",
+    val calendarImageUrl: String? = null,
+    val calendarPdfUrl: String? = null
 )
