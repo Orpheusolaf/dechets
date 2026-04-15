@@ -1,32 +1,15 @@
 package com.example.brusselscollectiondemo
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -34,7 +17,6 @@ import coil.compose.AsyncImage
 import com.example.brusselscollectiondemo.ui.CollectionViewModel
 
 class MainActivity : ComponentActivity() {
-    @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -60,6 +42,7 @@ fun CollectionApp(viewModel: CollectionViewModel = viewModel()) {
             TopAppBar(title = { Text("Collectes Bruxelles") })
         }
     ) { padding ->
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -67,10 +50,8 @@ fun CollectionApp(viewModel: CollectionViewModel = viewModel()) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(
-                text = "Recherche par adresse",
-                style = MaterialTheme.typography.titleMedium
-            )
+
+            Text("Recherche par adresse")
 
             OutlinedTextField(
                 value = street,
@@ -103,14 +84,13 @@ fun CollectionApp(viewModel: CollectionViewModel = viewModel()) {
             Button(
                 onClick = {
                     viewModel.search(
-                        street = street,
-                        number = number,
-                        postalCode = postalCode,
-                        municipality = municipality
+                        street,
+                        number,
+                        postalCode,
+                        municipality
                     )
                 },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = street.isNotBlank() && number.isNotBlank()
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Rechercher")
             }
@@ -123,56 +103,47 @@ fun CollectionApp(viewModel: CollectionViewModel = viewModel()) {
                 }
 
                 uiState.error != null -> {
-                    Card(modifier = Modifier.fillMaxWidth()) {
+                    Card {
                         Text(
-                            text = uiState.error ?: "",
+                            text = uiState.error!!,
                             modifier = Modifier.padding(16.dp)
                         )
                     }
                 }
 
                 uiState.schedule != null -> {
-                    uiState.schedule?.calendarImageUrl?.let { url ->
-                        Card(modifier = Modifier.fillMaxWidth()) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Text("Calendrier trouvé")
-                                Spacer(modifier = Modifier.height(8.dp))
-                                AsyncImage(
-                                    model = url,
-                                    contentDescription = "Calendrier de collecte",
-                                    modifier = Modifier.fillMaxWidth()
-                                )
+
+                    val rawUrl = uiState.schedule!!.calendarImageUrl
+                    val cleanUrl = rawUrl?.replace("\\/", "/")
+
+                    Text("Calendrier trouvé")
+
+                    cleanUrl?.let { url ->
+
+                        // DEBUG
+                        Text(url)
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        AsyncImage(
+                            model = url,
+                            contentDescription = "Calendrier",
+                            modifier = Modifier.fillMaxWidth(),
+                            onError = {
+                                Log.e("IMAGE", "Erreur chargement image")
                             }
-                        }
+                        )
                     }
 
-                    uiState.schedule?.calendarPdfUrl?.let { url ->
-                        Card(modifier = Modifier.fillMaxWidth()) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Text("PDF calendrier")
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(url)
-                            }
-                        }
-                    }
+                    Text("Résultats")
 
-                    Text(
-                        text = "Résultats",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
+                    LazyColumn {
                         items(uiState.schedule!!.events.take(20)) { event ->
-                            Card(modifier = Modifier.fillMaxWidth()) {
+                            Card {
                                 Column(modifier = Modifier.padding(16.dp)) {
-                                    Text(
-                                        text = event.date.toString(),
-                                        style = MaterialTheme.typography.titleSmall
-                                    )
-                                    Text(text = event.wasteType.name)
-                                    Text(text = event.label)
+                                    Text(event.date.toString())
+                                    Text(event.wasteType.name)
+                                    Text(event.label)
                                 }
                             }
                         }
