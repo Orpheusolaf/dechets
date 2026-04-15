@@ -93,14 +93,14 @@ class RealBrusselsScraper {
             .build()
 
         val request = Request.Builder()
-            .url("https://formsv2.arp-gan.eu/GetAddress.aspx")
+            .url("https://formsv2.arp-gan.eu/StreetEngine/GetAdress.aspx")
             .post(body)
             .header("Accept", "application/json, text/plain, */*")
             .header(
                 "User-Agent",
                 "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
             )
-            .header("Referer", "https://www.arp-gan.be/")
+            .header("Referer", "https://formsv2.arp-gan.eu/CalendarV5/?Language=FR")
             .header("Origin", "https://www.arp-gan.be")
             .build()
 
