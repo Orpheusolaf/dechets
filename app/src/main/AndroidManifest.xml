@@ -8,7 +8,8 @@
         android:label="Brussels Collection Demo"
         android:supportsRtl="true"
         android:theme="@style/Theme.BrusselsCollectionDemo">
-
+        android:usesCleartextTraffic="true"
+        
         <activity
             android:name=".MainActivity"
             android:exported="true">
