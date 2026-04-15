@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.brusselscollectiondemo.ui.CollectionViewModel
+import coil.compose.AsyncImage
 
 class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
@@ -146,11 +147,16 @@ AsyncImage(
     }
 }
 
-uiState.schedule?.calendarPdfUrl?.let { url ->
+uiState.schedule?.calendarImageUrl?.let { url ->
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text("PDF calendrier")
-            Text(url)
+            Text("Calendrier trouvé")
+            Spacer(modifier = Modifier.height(8.dp))
+            AsyncImage(
+                model = url,
+                contentDescription = "Calendrier de collecte",
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 }
